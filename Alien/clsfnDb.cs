@@ -68,7 +68,7 @@ namespace Alien
                     SERVERPROPERTY('InstanceName') AS instance_name,
                     @@VERSION AS version,
                     DB_NAME() AS current_database,
-                    SYSTEM_USER AS current_user;"
+                    SYSTEM_USER AS [current_user];"
             },
             {
                 enDatabase.PostgreSQL,
@@ -238,6 +238,11 @@ namespace Alien
 
         #region Local Function
 
+        /// <summary>
+        /// Check database existence
+        /// </summary>
+        /// <param name="szSource"></param>
+        /// <returns></returns>
         public bool fnbDbExists(string szSource)
         {
             string szQuery = "SELECT EXISTS(SELECT 1 FROM \"Database\" WHERE \"Source\" = @src);";
@@ -250,6 +255,11 @@ namespace Alien
             return Convert.ToInt32(result) == 1;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <returns></returns>
         private bool fnbDbWriteValidate(stDbConfig config)
         {
             if (!fnbDbExists(config.szSource))
@@ -266,6 +276,11 @@ namespace Alien
             return bRet;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <returns></returns>
         public bool fnbSaveDatabase(stDbConfig config)
         {
             string szQuery = string.Empty;
@@ -313,6 +328,11 @@ namespace Alien
             return fnbDbWriteValidate(config);
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="szId"></param>
+        /// <returns></returns>
         public stDbConfig fnGetDbConfig(string szId)
         {
             var ls = fnGetAllDbConfig();
@@ -321,6 +341,10 @@ namespace Alien
             return config;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <returns></returns>
         public List<stDbConfig> fnGetAllDbConfig()
         {
             List<stDbConfig> ls = new List<stDbConfig>();
@@ -362,6 +386,11 @@ namespace Alien
             return ls;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <returns></returns>
         public bool fnbDbDelete(stDbConfig config)
         {
             if (!fnbDbExists(config.szSource))
@@ -382,6 +411,11 @@ namespace Alien
 
         #region Tools
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="dt"></param>
+        /// <returns></returns>
         public static string fnPrintTable(DataTable dt)
         {
             if (dt == null || dt.Columns.Count == 0)
@@ -403,8 +437,7 @@ namespace Alien
 
             StringBuilder sb = new StringBuilder();
 
-            string szSeparate =
-                "+" + string.Join("+", nWidths.Select(w => new string('-', w + 2))) + "+";
+            string szSeparate = "+" + string.Join("+", nWidths.Select(w => new string('-', w + 2))) + "+";
 
             sb.AppendLine(szSeparate);
 
@@ -442,6 +475,12 @@ namespace Alien
             return sb.ToString();
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="cfg"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
         public static string fnBuildConnURL(stDbConfig cfg)
         {
             string user = Uri.EscapeDataString(cfg.szUsername ?? "");
@@ -496,6 +535,15 @@ namespace Alien
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="dbType"></param>
+        /// <param name="szDbName"></param>
+        /// <param name="szTable"></param>
+        /// <param name="nLimit"></param>
+        /// <returns></returns>
+        /// <exception cref="NotSupportedException"></exception>
         public string fnBuildDataQuery(enDatabase dbType, string szDbName, string szTable, int nLimit = 100)
         {
             switch (dbType)
@@ -534,6 +582,11 @@ namespace Alien
             }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="szSQL"></param>
+        /// <returns></returns>
         public string fnToSingleLineSql(string szSQL)
         {
             if (string.IsNullOrEmpty(szSQL))
@@ -565,6 +618,10 @@ namespace Alien
 
         #region Remote Function
 
+        /// <summary>
+        /// Get information of the remote database
+        /// </summary>
+        /// <returns></returns>
         public async Task<List<(string, bool)>> fnDbInit()
         {
             string szContent = await m_web.fnszSendPayload("db_init");
@@ -573,29 +630,58 @@ namespace Alien
             return result;
         }
 
+        /// <summary>
+        /// Convert Dictionary object into DataTable object
+        /// </summary>
+        /// <param name="objData"></param>
+        /// <returns></returns>
         private DataTable fnConvertToTable(List<Dictionary<string, object>> objData)
         {
             DataTable dt = new DataTable();
             if (objData == null || objData.Count == 0)
                 return dt;
 
+            int emptyColIndex = 1;
             foreach (var key in objData.First().Keys)
-                dt.Columns.Add(key);
+            {
+                string colName = key;
+                if (string.IsNullOrWhiteSpace(colName))
+                {
+                    colName = "Column_" + emptyColIndex++;
+                }
+
+                string uniqueColName = colName;
+                int dup = 1;
+                while (dt.Columns.Contains(uniqueColName))
+                {
+                    uniqueColName = colName + "_" + dup++;
+                }
+
+                dt.Columns.Add(uniqueColName);
+            }
 
             foreach (var dict in objData)
             {
                 DataRow dr = dt.NewRow();
+                int i = 0;
                 foreach (var key in dict.Keys)
-                    dr[key] = dict[key]?.ToString();
-
+                {
+                    dr[dt.Columns[i].ColumnName] = dict[key]?.ToString();
+                    i++;
+                }
                 dt.Rows.Add(dr);
             }
 
             dt.AcceptChanges();
-
             return dt;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="szQuery"></param>
+        /// <returns></returns>
         public async Task<string> fnszSqlExec(stDbConfig config, string szQuery)
         {
             string? szDb = Enum.GetName(typeof(enDatabase), config.enDbType);
@@ -615,6 +701,12 @@ namespace Alien
             return szResp;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="szQuery"></param>
+        /// <returns></returns>
         public async Task<DataTable> fnSqlQuery(stDbConfig config, string szQuery)
         {
             DataTable dt = new DataTable();
@@ -631,21 +723,34 @@ namespace Alien
 
                 if (!result.success)
                 {
-                    MessageBox.Show(result.error, "SQL query error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show(result.error + "\n" + szQuery, "SQL query error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     return dt;
                 }
 
-                dt = fnConvertToTable(result.data);
+                try
+                {
+                    dt = fnConvertToTable(result.data);
+                }
+                catch
+                {
+
+                }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(szResp, "HTTP response", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(ex.Message + "\n" + szResp, "HTTP response", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
 
             return dt;
         }
 
-        public async Task<clsSqlQueryExResult> fnSqlQueryEx(stDbConfig config, string szQuery)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="szQuery"></param>
+        /// <returns></returns>
+        public async Task<clsSqlQueryExResult?> fnSqlQueryEx(stDbConfig config, string szQuery)
         {
             DataTable dt = new DataTable();
             string szResp = await fnszSqlExec(config, szQuery);
@@ -660,35 +765,59 @@ namespace Alien
                 };
             }
 
-            clsQueryResponse? result = JsonSerializer.Deserialize<clsQueryResponse>(szResp);
-            if (result == null)
+            try
             {
+                clsQueryResponse? result = JsonSerializer.Deserialize<clsQueryResponse>(szResp);
+                if (result == null)
+                {
+                    return new clsSqlQueryExResult()
+                    {
+                        bSuccess = false,
+                        szQuery = szQuery,
+                        szErrorMsg = "JSON deserialization is failed. Responsed result is invalid.",
+                        dtOutput = dt,
+                    };
+                }
+
                 return new clsSqlQueryExResult()
                 {
-                    bSuccess = false,
+                    bSuccess = result.success,
                     szQuery = szQuery,
-                    szErrorMsg = "JSON deserialization is failed. Responsed result is invalid.",
-                    dtOutput = dt,
+                    szErrorMsg = result.error,
+                    dtOutput = result.success ? fnConvertToTable(result.data) : dt
                 };
             }
-
-            return new clsSqlQueryExResult()
+            catch (Exception ex)
             {
-                bSuccess = result.success,
-                szQuery = szQuery,
-                szErrorMsg = result.error,
-                dtOutput = result.success ? fnConvertToTable(result.data) : dt
-            };
+                MessageBox.Show(ex.Message + "\n" + szResp, ex.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return null;
+            }
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <returns></returns>
         public async Task<bool> fnDbTest(stDbConfig config)
         {
-            string szQuery = "SELECT 1;";
-            DataTable dt = await fnSqlQuery(config, szQuery);
+            string szQuery = "SELECT 1 AS val;";
+            var result = await fnSqlQueryEx(config, szQuery);
 
-            return dt.Rows.Count > 0 && dt.Columns.Count > 0 && Convert.ToInt32(dt.Rows[0][0]) == 1;
+            if (result == null)
+                return false;
+
+            if (!result.bSuccess)
+                MessageBox.Show(result.szErrorMsg, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+            return result.bSuccess;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <returns></returns>
         public async Task<DataTable> fnDbInfo(stDbConfig config)
         {
             DataTable dt = new DataTable();
@@ -703,6 +832,12 @@ namespace Alien
             return dt;
         }
 
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="config"></param>
+        /// <param name="szDbName"></param>
+        /// <returns></returns>
         public async Task<List<string>> fnDbGetTables(stDbConfig config, string szDbName)
         {
             string fnGetSQL(enDatabase dbType, string dbName)

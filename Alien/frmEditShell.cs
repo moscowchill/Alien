@@ -16,7 +16,7 @@ using System.Windows.Forms;
 
 namespace Alien
 {
-    public partial class frmEditShell : Form
+    public partial class frmEditShell : BaseForm
     {
         public clsTamper m_tamper { get; init; }
         public clsSqlite m_sqlConn { get; init; }
@@ -161,6 +161,12 @@ namespace Alien
                 comboBox4.Text = m_stShellConfig.szMethod;
                 comboBox3.Text = m_stShellConfig.payloadType.ToString();
 
+                textBox4.Text = m_stShellConfig.szUserAgent;
+                numericUpDown1.Value = m_stShellConfig.nTimeout;
+                textBox6.Text = m_stShellConfig.szCookie;
+                textBox5.Text = m_stShellConfig.szExtraPost;
+                comboBox7.SelectedIndex = m_stShellConfig.nExtraPostPosition;
+
                 checkBox1.Checked = m_stShellConfig.bEHEnable;
                 textBox3.Text = m_stShellConfig.szDescription;
                 textBox4.Text = m_stShellConfig.szUserAgent;
@@ -171,6 +177,9 @@ namespace Alien
                 fnLoadComet(lsComet);
 
                 listView1.Sort();
+
+                groupBox3.Enabled = checkBox1.Checked;
+                textBox5.Enabled = !checkBox1.Checked && listView1.Items.Count == 0;
             }
         }
 
@@ -583,7 +592,7 @@ namespace Alien
 
         private void comboBox3_SelectedIndexChanged(object sender, EventArgs e)
         {
-            bool bOneShell = comboBox3.Text.Equals("OneShell");
+            bool bOneShell = comboBox3.Text.Equals("OneShell") || comboBox3.Text.Equals("DarkMatter");
             groupBox2.Enabled = bOneShell;
             groupBox5.Enabled = bOneShell;
         }

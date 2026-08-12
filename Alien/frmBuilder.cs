@@ -13,7 +13,7 @@ using System.Windows.Forms;
 
 namespace Alien
 {
-    public partial class frmBuilder : Form
+    public partial class frmBuilder : BaseForm
     {
         private clsTamper m_tamper { get; init; }
         private List<string> m_lsNbPayload = new List<string>();
@@ -81,7 +81,7 @@ namespace Alien
 
         void fnBuildMemoryShell(string szType, string szPayload, string szKey)
         {
-            fnBuildMemoryShell(szType, szPayload, szKey);
+            fnShowMemoryShellHex(szType, szPayload, szKey);
 
             byte[] abBytes = Convert.FromHexString(richTextBox2.Text);
 

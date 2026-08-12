@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 
 namespace Alien
@@ -15,6 +17,11 @@ namespace Alien
         public string m_szPluginsDir { get; init; }
         public string m_szEnvironment { get { return Path.Combine(Enum.GetName(typeof(enLanguage), m_victim.ShellLanguage), m_victim.ShellMethod, Enum.GetName(typeof(enPayloadType), m_victim.ShellPayloadType)).Replace("\\", "/"); } }
 
+        /// <summary>
+        /// Remote plugin object
+        /// </summary>
+        /// <param name="web">Web object</param>
+        /// <param name="szDir">Plugins directory</param>
         public clsfnPlugin(clsWeb web, string szDir = "Plugins")
         {
             m_web = web;
@@ -40,6 +47,11 @@ namespace Alien
             public string szDescription { get; set; }
         }
 
+        /// <summary>
+        /// Get manifest json object
+        /// </summary>
+        /// <param name="szPluginDirName"></param>
+        /// <returns></returns>
         public stManifest? fnLoadPluginManifest(string szPluginDirName)
         {
             try
@@ -60,6 +72,10 @@ namespace Alien
             }
         }
 
+        /// <summary>
+        /// Get all plugins
+        /// </summary>
+        /// <returns></returns>
         public List<stManifest> fnGetPlugins()
         {
             List<stManifest> plugins = new List<stManifest>();
@@ -85,9 +101,14 @@ namespace Alien
         [ComVisible(true)]
         public class clsBridge
         {
-            private clsWeb m_web { get; init; } // Webshell object
-            private string m_szEnvironment { get; set; } // Environment (e.g., PHP/v8.X/OneShell)
+            private clsWeb m_web { get; init; }             // Webshell object
+            private string m_szEnvironment { get; set; }    // Environment (e.g., PHP/v8.X/OneShell)
 
+            /// <summary>
+            /// Plugin bridging object
+            /// </summary>
+            /// <param name="web"></param>
+            /// <param name="szEnvironment"></param>
             public clsBridge(clsWeb web, string szEnvironment)
             {
                 m_web = web;
@@ -101,6 +122,15 @@ namespace Alien
             public string fnGetShellType()
             {
                 return m_szEnvironment;
+            }
+
+            /// <summary>
+            /// Check target's operating system
+            /// </summary>
+            /// <returns></returns>
+            public bool fnbIsUnixLike()
+            {
+                return m_web.m_victim.m_bUnixLike;
             }
 
             /// <summary>
@@ -148,7 +178,7 @@ namespace Alien
             }
 
             /// <summary>
-            /// 
+            /// Read file as text
             /// </summary>
             /// <param name="szFilePath"></param>
             /// <returns></returns>
@@ -161,7 +191,7 @@ namespace Alien
             }
 
             /// <summary>
-            /// 
+            /// Read file as bytes
             /// </summary>
             /// <param name="szFilePath"></param>
             /// <returns></returns>
@@ -174,7 +204,148 @@ namespace Alien
             }
 
             /// <summary>
+            /// Save file as text
+            /// </summary>
+            /// <param name="szFileContent"></param>
+            /// <returns></returns>
+            public string fnSaveFileText(string szFileName, string szFileContent)
+            {
+                SaveFileDialog sfd = new SaveFileDialog();
+                sfd.FileName = szFileName;
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        File.WriteAllText(sfd.FileName, szFileContent);
+
+                        return "[+] Saved file successfully: " + sfd.FileName;
+                    }
+                    catch (Exception ex)
+                    {
+                        return "[-] " + ex.Message;
+                    }
+                }
+                else
+                {
+                    return "[!] Action was cancelled.";
+                }
+            }
+
+            /// <summary>
+            /// Save file as bytes
+            /// </summary>
+            /// <param name="abFileBytes"></param>
+            /// <returns></returns>
+            public string fnSaveFileBytes(string szFileName, string szB64Data)
+            {
+                SaveFileDialog sfd = new SaveFileDialog();
+                sfd.FileName = szFileName;
+                if (sfd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        byte[] abFileBytes = Convert.FromBase64String(szB64Data);
+                        File.WriteAllBytes(sfd.FileName, abFileBytes);
+
+                        return "[+] Saved file successfully: " + sfd.FileName;
+                    }
+                    catch (Exception ex)
+                    {
+                        return "[-] " + ex.Message;
+                    }
+                }
+                else
+                {
+                    return "[!] Action was cancelled.";
+                }
+            }
+
+            /// <summary>
             /// 
+            /// </summary>
+            /// <param name="dicFile"></param>
+            /// <returns></returns>
+            public string fnSaveTextFiles(Dictionary<string, string> dicFile)
+            {
+                FolderBrowserDialog fbd = new FolderBrowserDialog();
+                if (fbd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        foreach (var szFilename in dicFile.Keys)
+                        {
+                            string szContent = dicFile[szFilename];
+                            File.WriteAllText(szFilename, szContent);
+                        }
+
+                        return "[+] Action successfully: " + fbd.SelectedPath;
+                    }
+                    catch (Exception ex)
+                    {
+                        return "[-] " + ex.Message;
+                    }
+                }
+                else
+                {
+                    return "[!] Action was aborted.";
+                }
+            }
+
+            /// <summary>
+            /// 
+            /// </summary>
+            /// <param name="dicFile"></param>
+            /// <returns></returns>
+            public string fnSaveByteFiles(Dictionary<string, byte[]> dicFile)
+            {
+                FolderBrowserDialog fbd = new FolderBrowserDialog();
+                if (fbd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        foreach (var szFilename in dicFile.Keys)
+                        {
+                            byte[] abContent = dicFile[szFilename];
+                            File.WriteAllBytes(szFilename, abContent);
+                        }
+
+                        return "[+] Action successfully: " + fbd.SelectedPath;
+                    }
+                    catch (Exception ex)
+                    {
+                        return "[-] " + ex.Message;
+                    }
+                }
+                else
+                {
+                    return "[!] Action was aborted.";
+                }
+            }
+
+            /// <summary>
+            /// Upload file
+            /// </summary>
+            /// <returns></returns>
+            public byte[] fnFileUpload()
+            {
+                OpenFileDialog ofd = new OpenFileDialog();
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        return File.ReadAllBytes(ofd.FileName);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, ex.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+
+                return new byte[] { };
+            }
+
+            /// <summary>
+            /// Execute payload with JSON parameters
             /// </summary>
             /// <param name="szJson"></param>
             /// <param name="szPayload"></param>

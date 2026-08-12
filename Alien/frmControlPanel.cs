@@ -27,34 +27,38 @@ using System.Reflection.Metadata;
 using System.Data.Entity.Core.Metadata.Edm;
 using System.Text.Json.Nodes;
 
+using static Alien.clsThemeManager;
+
 namespace Alien
 {
-    public partial class frmControlPanel : Form
+    public partial class frmControlPanel : BaseForm
     {
-        private TabPage draggedTab = null;
+        private TabPage? draggedTab = null;
 
         public clsWeb m_web { get; init; }
         public clsVictim m_victim { get { return m_web.m_victim; } }
 
-        private bool m_isReading = false; // Virtual Shell
+        private clsIniManager m_iniMgr { get; init; }
 
-        public clsfnInfoSpyder m_infoSpyder { get; init; }
-        public clsfnFileMgr m_fileMgr { get; init; }
-        public clsfnShell m_rShell { get; set; }
-        public clsfnDb m_dbMgr { get; init; }
-        public clsfnRunScript m_runScript { get; init; }
-        public clsfnLAN m_lan { get; init; }
-        public clsfnWinReg m_winReg { get; init; }
-        public clsfnWinUser m_winUser { get; init; }
-        public clsfnPlugin m_plugin { get; init; }
-        public clsfnSocks5 m_socks5 { get; init; }
+        private bool m_isReading = false;                   // Virtual Shell
+
+        public clsfnInfoSpyder m_infoSpyder { get; init; }  // Infospyder
+        public clsfnFileMgr m_fileMgr { get; init; }        // File Manager
+        public clsfnShell m_rShell { get; set; }            // Remote Shell
+        public clsfnDb m_dbMgr { get; init; }               // Database Manager
+        public clsfnRunScript m_runScript { get; init; }    // Run Arbitrary Script
+        public clsfnLAN m_lan { get; init; }                // LAN Tools
+        public clsfnWinReg m_winReg { get; init; }          // Windows Registry
+        public clsfnWinUser m_winUser { get; init; }        // Windows Users
+        public clsfnPlugin m_plugin { get; init; }          // Plugins
+        public clsfnSocks5 m_socks5 { get; init; }          // SOCKS5
 
         private WebBrowser m_ctrlInfoBrowser = new WebBrowser();
         private WebBrowser m_ctrlEvalBrowser = new WebBrowser();
         private TextEditorControlEx m_ctrlEvalEditor = new TextEditorControlEx();
         private TextEditorControlEx m_ctrlPostEditor = new TextEditorControlEx();
 
-        private Dictionary<enLanguage, Func<string, string>> m_dicEvalScript = new Dictionary<enLanguage, Func<string, string>>()
+        private Dictionary<enLanguage, Func<enPayloadType, string>> m_dicEvalScript = new Dictionary<enLanguage, Func<enPayloadType, string>>()
         {
             {
                 enLanguage.PHP,
@@ -74,9 +78,9 @@ namespace Alien
                 enLanguage.ASPX,
                 (method) =>
                 {
-                    if (method == "JScript")
+                    if (method == enPayloadType.OneShell)
                         return "Response.Write(\"JScript ASPX\");";
-                    else if (method == "NebulaPulsar")
+                    else if (method == enPayloadType.DarkMatter)
                         return "int a = 1;\r\nint b = 2;\r\nreturn a + b;";
                     else
                         return string.Empty;
@@ -86,9 +90,9 @@ namespace Alien
                 enLanguage.ASHX,
                 (method) =>
                 {
-                    if (method == "JScript")
+                    if (method == enPayloadType.OneShell)
                         return "Response.Write(\"JScript ASPX\");";
-                    else if (method == "NebulaPulsar")
+                    else if (method == enPayloadType.DarkMatter)
                         return "int a = 1;\r\nint b = 2;\r\nreturn a + b;";
                     else
                         return string.Empty;
@@ -98,9 +102,9 @@ namespace Alien
                 enLanguage.ASMX,
                 (method) =>
                 {
-                    if (method == "JScript")
+                    if (method == enPayloadType.OneShell)
                         return "Response.Write(\"JScript ASPX\");";
-                    else if (method == "NebulaPulsar")
+                    else if (method == enPayloadType.DarkMatter)
                         return "int a = 1;\r\nint b = 2;\r\nreturn a + b;";
                     else
                         return string.Empty;
@@ -110,9 +114,21 @@ namespace Alien
                 enLanguage.JSP,
                 (method) =>
                 {
-                    if (method == "Nashorn")
+                    if (method == enPayloadType.OneShell)
                         return "response.getWriter().println(\"Hello here is the test\");";
-                    else if (method == "NebulaPulsar")
+                    else if (method == enPayloadType.DarkMatter)
+                        return "int a = 1;\r\nint b = 1;\r\nreturn a + b;";
+                    else
+                        return string.Empty;
+                }
+            },
+            {
+                enLanguage.JSPX,
+                (method) =>
+                {
+                    if (method == enPayloadType.OneShell)
+                        return "response.getWriter().println(\"Hello here is the test\");";
+                    else if (method == enPayloadType.DarkMatter)
                         return "int a = 1;\r\nint b = 1;\r\nreturn a + b;";
                     else
                         return string.Empty;
@@ -122,7 +138,7 @@ namespace Alien
                 enLanguage.CFM,
                 (method) =>
                 {
-                    if (method == "NebulaPulsar")
+                    if (method == enPayloadType.DarkMatter)
                         return "int a = 1;\r\nint b = 1;\r\nreturn a + b;";
                     else
                         return string.Empty;
@@ -132,7 +148,7 @@ namespace Alien
                 enLanguage.Perl,
                 (method) =>
                 {
-                    if (method == "CGI")
+                    if (method == enPayloadType.OneShell)
                         return "print(\"Hello here is the test\")";
                     else
                         return string.Empty;
@@ -142,7 +158,7 @@ namespace Alien
                 enLanguage.Ruby,
                 (method) =>
                 {
-                    if (method == "CGI")
+                    if (method == enPayloadType.OneShell)
                         return "puts \"Hello here is the test\"";
                     else
                         return string.Empty;
@@ -154,11 +170,13 @@ namespace Alien
         {
             "png", "jpg", "bmp", "ico",
         };
-        private bool fnbIsImageFile(string szExtension) => m_asImageExt.Contains(szExtension.Replace(".", string.Empty));
+        private bool fnbIsImageFile(string szExtension) => m_asImageExt.Contains(szExtension.ToLower().Replace(".", string.Empty));
 
-        public frmControlPanel(clsWeb web)
+        public frmControlPanel(clsWeb web, clsIniManager iniMgr)
         {
             InitializeComponent();
+
+            ThemeManager.Apply(this);
 
             m_web = web;
 
@@ -173,6 +191,8 @@ namespace Alien
             m_socks5 = new clsfnSocks5(web);
 
             m_dbMgr = new clsfnDb(web, "db.sqlite");
+
+            m_iniMgr = iniMgr;
         }
 
         #region Classes
@@ -182,21 +202,32 @@ namespace Alien
             public clsfnDb m_dbMgr { get; init; }
             public clsfnDb.stDbConfig m_config { get; init; }
             public TreeNode m_nodeRoot { get; init; }
-            public TabPage page { get; init; }
+            public TabPage? page { get; init; }
 
-            public ToolStrip toolStrip { get; init; }
-            public ListView listView { get; init; }
-            public TextBox textBox { get; init; }
+            public ToolStrip? toolStrip { get; init; }
+            public ListView? listView { get; init; }
+            public TextBox? textBox { get; init; }
 
             public List<string> m_lsLastTable = new List<string>();
 
-            private ImageList dbListImageList { get; init; }
+            private ImageList? dbListImageList { get; init; }
 
             public clsDbTablePageControls(clsfnDb dbMgr, clsfnDb.stDbConfig config, TreeNode nodeRoot, TabPage page, ImageList imageList, ContextMenuStrip menuTable)
             {
                 m_dbMgr = dbMgr;
                 m_config = config;
                 m_nodeRoot = nodeRoot;
+
+                if (page.Controls.Count > 0)
+                {
+                    listView = page.Controls.OfType<ListView>().FirstOrDefault();
+                    toolStrip = page.Controls.OfType<ToolStrip>().FirstOrDefault();
+                    textBox = page.Controls.OfType<TextBox>().FirstOrDefault();
+
+                    dbListImageList = listView.LargeImageList;
+
+                    return;
+                }
 
                 dbListImageList = new ImageList();
                 dbListImageList.ImageSize = new Size(60, 60);
@@ -255,6 +286,8 @@ namespace Alien
                 lv.View = View.LargeIcon;
                 lv.ContextMenuStrip = menuTable;
 
+                ThemeManager.Apply(page);
+
                 // ImageList
                 lv.LargeImageList = dbListImageList;
 
@@ -268,8 +301,6 @@ namespace Alien
                         if (lsTables.Count == 0)
                         {
                             MessageBox.Show($"Cannot find any table in \"{szDbName}\"", "It is empty!", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-                            return;
                         }
 
                         lv.Items.Clear();
@@ -316,9 +347,9 @@ namespace Alien
             private clsfnDb.stDbConfig m_cfg { get; init; }
             private clsfnDb m_dbMgr { get; init; }
 
-            public TextBox textBox { get; init; }
-            public DataGridView dataGridView { get; init; }
-            public ToolStrip toolStrip { get; init; }
+            public TextBox? textBox { get; init; }
+            public DataGridView? dataGridView { get; init; }
+            public ToolStrip? toolStrip { get; init; }
 
             private TabPage? m_page;
             private DataTable? m_dt = null;
@@ -362,6 +393,8 @@ namespace Alien
 
                 ToolStripButton btnExport = new ToolStripButton("Export");
                 toolStrip.Items.Add(btnExport);
+
+                ThemeManager.Apply(page);
 
                 btnExport.Dock = DockStyle.Top;
                 btnExport.Click += (s, e) =>
@@ -459,9 +492,9 @@ namespace Alien
             }
 
             /// <summary>
-            /// 
+            /// Save SQL dta as *.csv file
             /// </summary>
-            /// <param name="szFilePath"></param>
+            /// <param name="szFilePath">Destination file path</param>
             private void fnExportToCSV(string szFilePath)
             {
                 StringBuilder sb = new StringBuilder();
@@ -489,9 +522,9 @@ namespace Alien
             }
 
             /// <summary>
-            /// 
+            /// Save SQL data as *.sql file
             /// </summary>
-            /// <param name="szFilePath"></param>
+            /// <param name="szFilePath">Destination file path</param>
             private void fnExportToSQL(string szFilePath)
             {
                 StringBuilder sb = new StringBuilder();
@@ -522,7 +555,7 @@ namespace Alien
             }
 
             /// <summary>
-            /// 
+            /// Save datatable modification to remote server.
             /// </summary>
             /// <returns></returns>
             private async Task<bool> fnbDbSaveRemoteChanges()
@@ -715,7 +748,7 @@ namespace Alien
             /// </summary>
             /// <param name="value"></param>
             /// <returns></returns>
-            private string fnEscapeSqlValue(object value)
+            private string? fnEscapeSqlValue(object value)
             {
                 if (value == null || value == DBNull.Value) return "NULL";
 
@@ -728,6 +761,7 @@ namespace Alien
                 {
                     return b ? "1" : "0";
                 }
+
                 return value.ToString();
             }
         }
@@ -744,6 +778,9 @@ namespace Alien
             public RichTextBox richTextBox { get; init; }
             public ToolStrip toolStrip { get; init; }
             public TextEditorControlEx textEditorControl { get; init; }
+
+            private List<string> m_lsSqlHistory = new List<string>();
+            private int m_nIdxSQL = 0;
 
             public clsDbSqlShellControls(TabPage page, clsfnDb.stDbConfig config, clsfnDb dbMgr)
             {
@@ -777,12 +814,74 @@ namespace Alien
                 textEditorControl.BringToFront();
 
                 ToolStripButton btnExec = new ToolStripButton("Execute");
+                ToolStripComboBox comboSQL = new ToolStripComboBox();
 
                 toolStrip.Items.AddRange(new ToolStripItem[]
                 {
                     btnExec,
+                    new ToolStripLabel() { Text = " | " },
+                    new ToolStripLabel() { Text = "SQL: " },
+                    comboSQL,
                 });
                 toolStrip.Font = page.Font;
+
+                ThemeManager.ApplyRange(page.Controls);
+
+                comboSQL.ComboBox.Width = 300;
+
+                string szJson = Path.Combine(Application.StartupPath, "Tools", "useful_sql.json");
+                if (File.Exists(szJson))
+                {
+                    try
+                    {
+                        string szContent = File.ReadAllText(szJson);
+                        var jsonObj = JObject.Parse(szContent);
+                        var databases = jsonObj["databases"];
+
+                        string? szTargetDB = Enum.GetName(typeof(enDatabase), config.enDbType);
+                        if (string.IsNullOrEmpty(szTargetDB))
+                            throw new Exception("Unknown database type");
+
+                        var sqlList = databases?[szTargetDB];
+                        if (sqlList == null)
+                            throw new Exception("JSON error.");
+
+                        comboSQL.ComboBox.Items.Clear();
+
+                        Dictionary<string, string> dicSQL = new Dictionary<string, string>();
+
+                        foreach (var item in sqlList)
+                        {
+                            string? szName = item["name"]?.ToString();
+                            string? szSQL = item["sql"]?.ToString();
+
+                            if (string.IsNullOrEmpty(szName) || string.IsNullOrEmpty(szSQL))
+                                continue;
+
+                            dicSQL.Add(szName, szSQL);
+                            comboSQL.Items.Add(szName);
+                        }
+
+                        comboSQL.SelectedIndexChanged += (s, e) =>
+                        {
+                            string szName = comboSQL.Text;
+                            if (!dicSQL.ContainsKey(szName))
+                                return;
+
+                            string szSQL = dicSQL[szName];
+                            
+                            textEditorControl.Text = szSQL;
+                            textEditorControl.Refresh();
+                        };
+
+                        if (comboSQL.Items.Count > 0)
+                            comboSQL.SelectedIndex = 0;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show(ex.Message, ex.GetType().Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
 
                 btnExec.Click += async (s, e) =>
                 {
@@ -801,7 +900,69 @@ namespace Alien
                     richTextBox.AppendText(m_szPrompt);
                     richTextBox.ScrollToCaret();
                     m_nPromitStart = richTextBox.TextLength;
+
+                    fnPushSQL(szSQL);
                 };
+            }
+
+            /// <summary>
+            /// 
+            /// </summary>
+            /// <returns></returns>
+            public string fnPreviousSQL()
+            {
+                if (m_lsSqlHistory.Count == 0)
+                    return string.Empty;
+
+                if (m_nIdxSQL == m_lsSqlHistory.Count - 1)
+                {
+                    string szSQL = m_lsSqlHistory[m_nIdxSQL];
+                    m_nIdxSQL--;
+
+                    return szSQL;
+                }
+
+                m_nIdxSQL--;
+                if (m_nIdxSQL < 0)
+                    m_nIdxSQL = 0;
+
+                return m_lsSqlHistory[m_nIdxSQL];
+            }
+
+            /// <summary>
+            /// 
+            /// </summary>
+            /// <returns></returns>
+            public string fnNextSQL()
+            {
+                if (m_lsSqlHistory.Count == 0)
+                    return string.Empty;
+
+                m_nIdxSQL++;
+                if (m_nIdxSQL > m_lsSqlHistory.Count - 1)
+                    fnResetSqlIndex();
+
+                return m_lsSqlHistory[m_nIdxSQL];
+            }
+
+            /// <summary>
+            /// Reset History SQL command index.
+            /// </summary>
+            private void fnResetSqlIndex()
+            {
+                m_nIdxSQL = m_lsSqlHistory.Count - 1;
+                if (m_nIdxSQL < 0)
+                    m_nIdxSQL = 0;
+            }
+
+            /// <summary>
+            /// Add SQL command into History List.
+            /// </summary>
+            /// <param name="szSQL"></param>
+            public void fnPushSQL(string szSQL)
+            {
+                m_lsSqlHistory.Add(szSQL);
+                fnResetSqlIndex();
             }
         }
         private class clsDbInformation
@@ -817,6 +978,7 @@ namespace Alien
                 m_config = config;
 
                 richTextBox = new RichTextBox();
+                richTextBox.WordWrap = false;
 
                 page.Tag = this;
                 page.Controls.Add(richTextBox);
@@ -873,6 +1035,8 @@ namespace Alien
                 page.Controls.Add(dgvSchema);
                 page.Controls.Add(toolStrip);
                 page.Controls.Add(txtTableName);
+
+                ThemeManager.ApplyRange(page.Controls);
 
                 dgvSchema.BringToFront();
             }
@@ -1298,8 +1462,7 @@ namespace Alien
             frmTextEditor? f = fnFindForm<frmTextEditor>();
             if (f == null)
             {
-                f = new frmTextEditor();
-                f.Owner = this;
+                f = new frmTextEditor(this);
                 f.Show();
             }
 
@@ -1341,6 +1504,7 @@ namespace Alien
         public async Task<Dictionary<string, bool>> fnFileUpload(List<string> lsSrcFilePath, int nThread = 3, int nChunkSize = 5 * 1024, Action fnOnCallback = null)
         {
             tabControl6.SelectedIndex = 1;
+            m_fileMgr.m_bUploadFile = true;
 
             string szCurrentDir = m_fileMgr.m_szCurrentPath;
             Dictionary<string, bool> dicState = new Dictionary<string, bool>();
@@ -1448,6 +1612,7 @@ namespace Alien
 
         public async Task<(Dictionary<string, bool> dicState, string szSaveDirPath)> fnFileDownload(List<(string, long)> lsRemoteFile, int nThread = 3, int nChunkSize = 5 * 1024, Action fnCallback = null)
         {
+            tabControl6.SelectedIndex = 1;
             m_fileMgr.m_bDownloadFile = true;
 
             string szLocalSaveDirPath = Path.Combine("Victim", m_victim.m_szShellDomain, "Downloads");
@@ -1549,8 +1714,7 @@ namespace Alien
             frmTextEditor? f = fnFindForm<frmTextEditor>();
             if (null == f)
             {
-                f = new frmTextEditor();
-                f.Owner = this;
+                f = new frmTextEditor(this);
                 f.Show();
             }
 
@@ -1675,8 +1839,8 @@ namespace Alien
                 ListViewItem item = ctrls.listView.SelectedItems[0];
                 string szTable = item.Text;
 
-                string szQuery = $"SELECT * FROM `{szDbName}`.`{szTable}` LIMIT 100;";
                 var config = m_dbMgr.m_stDbConfig[szHost];
+                string szQuery = m_dbMgr.fnBuildDataQuery(config.enDbType, szDbName, szTable);
                 DataTable dt = await m_dbMgr.fnSqlQuery(config, szQuery);
 
                 fnDbShowData(config, dt, szQuery, szDbName, szTable);
@@ -1801,6 +1965,8 @@ namespace Alien
                     e.SuppressKeyPress = true;
 
                     string szCmd = ctrls.richTextBox.Text.Substring(nPrompt);
+                    if (string.IsNullOrEmpty(szCmd))
+                        return;
 
                     ctrls.richTextBox.AppendText("\n\n");
 
@@ -1817,10 +1983,34 @@ namespace Alien
 
                     ctrls.m_nPromitStart = ctrls.richTextBox.TextLength;
 
+                    ctrls.fnPushSQL(szCmd);
+
                     return;
                 }
 
-                if (e.KeyCode == Keys.Back && ctrls.richTextBox.SelectionStart <= nPrompt && ctrls.richTextBox.SelectionLength == 0)
+                if (e.KeyCode == Keys.Up)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+
+                    string szSQL = ctrls.fnPreviousSQL();
+
+                    ctrls.richTextBox.Text = ctrls.richTextBox.Text.Substring(0, ctrls.m_nPromitStart);
+                    ctrls.richTextBox.AppendText(szSQL);
+                }
+
+                if (e.KeyCode == Keys.Down)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+
+                    string szSQL = ctrls.fnNextSQL();
+
+                    ctrls.richTextBox.Text = ctrls.richTextBox.Text.Substring(0, ctrls.m_nPromitStart);
+                    ctrls.richTextBox.AppendText(szSQL);
+                }
+
+                if ((e.KeyCode == Keys.Back || e.KeyCode == Keys.Left) && ctrls.richTextBox.SelectionStart <= nPrompt && ctrls.richTextBox.SelectionLength == 0)
                 {
                     e.SuppressKeyPress = true;
                     return;
@@ -2213,6 +2403,13 @@ namespace Alien
         #endregion
         #endregion
 
+        /// <summary>
+        /// Load and display all plugins
+        /// </summary>
+        /// <param name="szCurrentDir"></param>
+        /// <param name="currentNodes"></param>
+        /// <param name="szFilter"></param>
+        /// <returns>Number of plugins</returns>
         private async Task<int> fnLoadAllPlugins(string szCurrentDir, TreeNodeCollection currentNodes, string szFilter = "")
         {
             int nPluginCount = 0;
@@ -2223,68 +2420,78 @@ namespace Alien
 
                 foreach (string szDirName in aszSubDirs)
                 {
-                    string szFolderName = Path.GetFileName(szDirName);
-                    TreeNode nodeDir = new TreeNode(szFolderName);
-
-                    var manifest = await Task.Run(() => m_plugin.fnLoadPluginManifest(szDirName));
-                    bool bAddNode = false;
-                    bool bIsPlugin = false;
-
-                    if (manifest != null && manifest.HasValue)
+                    try
                     {
-                        var info = manifest.Value;
+                        string szFolderName = Path.GetFileName(szDirName);
+                        TreeNode nodeDir = new TreeNode(szFolderName);
 
-                        if (toolStripComboBox1.SelectedIndex == 0 && !info.lsEnvironment.Contains(m_plugin.m_szEnvironment))
+                        var manifest = await Task.Run(() => m_plugin.fnLoadPluginManifest(szDirName));
+                        bool bAddNode = false;
+                        bool bIsPlugin = false;
+
+                        if (manifest != null && manifest.HasValue)
                         {
-                            bAddNode = false;
+                            var info = manifest.Value;
+
+                            if (m_plugin == null || toolStripComboBox1 == null || info.lsEnvironment == null || m_plugin.m_szEnvironment == null)
+                                return 0;
+
+                            if (toolStripComboBox1.SelectedIndex == 0 && !info.lsEnvironment.Contains(m_plugin.m_szEnvironment))
+                            {
+                                bAddNode = false;
+                            }
+                            else
+                            {
+                                bAddNode = true;
+                                bIsPlugin = true;
+                            }
                         }
                         else
                         {
-                            bAddNode = true;
-                            bIsPlugin = true;
+                            string szIndexPath = Path.Combine(szDirName, "index.html");
+                            bool bFileExists = await Task.Run(() => File.Exists(szIndexPath));
+                            if (bFileExists)
+                            {
+                                bAddNode = true;
+                            }
                         }
-                    }
-                    else
-                    {
-                        string szIndexPath = Path.Combine(szDirName, "index.html");
-                        bool bFileExists = await Task.Run(() => File.Exists(szIndexPath));
-                        if (bFileExists)
+
+                        if (bAddNode && !string.IsNullOrEmpty(szFilter))
                         {
-                            bAddNode = true;
+                            if (szFolderName.IndexOf(szFilter, StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                bAddNode = false;
+                                bIsPlugin = false;
+                            }
                         }
-                    }
 
-                    if (bAddNode && !string.IsNullOrEmpty(szFilter))
-                    {
-                        if (szFolderName.IndexOf(szFilter, StringComparison.OrdinalIgnoreCase) < 0)
+                        if (bAddNode)
                         {
-                            bAddNode = false;
-                            bIsPlugin = false;
+                            nPluginCount++;
+                        }
+
+                        if (bIsPlugin)
+                        {
+                            nodeDir.ImageKey = "sword";
+                            nodeDir.SelectedImageKey = "sword";
+                        }
+                        else
+                        {
+                            nodeDir.ImageKey = "folder";
+                            nodeDir.SelectedImageKey = "folder";
+                        }
+
+                        int nSubCount = await fnLoadAllPlugins(szDirName, nodeDir.Nodes, szFilter);
+                        nPluginCount += nSubCount;
+
+                        if (bAddNode || nodeDir.Nodes.Count > 0)
+                        {
+                            currentNodes.Add(nodeDir);
                         }
                     }
-
-                    if (bAddNode)
+                    catch (NullReferenceException)
                     {
-                        nPluginCount++;
-                    }
-
-                    if (bIsPlugin)
-                    {
-                        nodeDir.ImageKey = "sword";
-                        nodeDir.SelectedImageKey = "sword";
-                    }
-                    else
-                    {
-                        nodeDir.ImageKey = "folder";
-                        nodeDir.SelectedImageKey = "folder";
-                    }
-
-                    int nSubCount = await fnLoadAllPlugins(szDirName, nodeDir.Nodes, szFilter);
-                    nPluginCount += nSubCount;
-
-                    if (bAddNode || nodeDir.Nodes.Count > 0)
-                    {
-                        currentNodes.Add(nodeDir);
+                        return 0;
                     }
                 }
             }
@@ -2303,6 +2510,7 @@ namespace Alien
             {
                 count += fnCountNodes(subNode);
             }
+
             return count;
         }
 
@@ -2314,6 +2522,44 @@ namespace Alien
             m_socks5.fnStop();
 
             //await m_web.DisposeAsync();
+        }
+
+        /// <summary>
+        /// Initialize plugin system.
+        /// </summary>
+        async void fnPluginInit()
+        {
+            try
+            {
+                string? szLang = Enum.GetName(typeof(enLanguage), m_victim.ShellLanguage);
+                string? szPayloadType = Enum.GetName(typeof(enPayloadType), m_victim.ShellPayloadType);
+
+                if (string.IsNullOrEmpty(szLang))
+                {
+                    MessageBox.Show("Failed to convert shell script language", "Null", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(szPayloadType))
+                {
+                    MessageBox.Show("Failed to convert payload type", "Null", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                string szEnv = Path.Combine(szLang, m_victim.ShellMethod, szPayloadType).Replace("\\", "/");
+
+                await webViewPlugin.EnsureCoreWebView2Async(null);
+                webViewPlugin.CoreWebView2.AddHostObjectToScript("nativeBridge", new clsfnPlugin.clsBridge(m_web, szEnv));
+
+                string szHtmlPath = Path.Combine(m_plugin.m_szPluginsDir, "index.html");
+                webViewPlugin.CoreWebView2.Navigate(szHtmlPath);
+
+                toolStripComboBox1.SelectedIndex = 0;
+            }
+            catch
+            {
+                return;
+            }
         }
 
         async void fnSetup()
@@ -2334,6 +2580,8 @@ namespace Alien
             toolStripStatusLabel6.Text = string.Empty;
             toolStripStatusLabel7.Text = string.Empty;
             toolStripStatusLabel8.Text = "Loading...";
+
+            toolStripLabel2.Text = string.Empty;
 
             textBox8.Text = m_victim.ShellURL;
 
@@ -2362,6 +2610,10 @@ namespace Alien
             listView12.FullRowSelect = true;
             listView16.FullRowSelect = true;
             listView17.FullRowSelect = true;
+
+            // Plugins
+
+            fnPluginInit();
 
             //Information
             m_ctrlInfoBrowser.DocumentText = await fnszGetInfo();
@@ -2481,13 +2733,57 @@ namespace Alien
             tabControl4.AllowDrop = true;
             tabControl4.Padding = new Point(30, 3);
             tabControl4.DrawMode = TabDrawMode.OwnerDrawFixed;
+
+            new TabZeroHook(tabControl4);
+
             tabControl4.DrawItem += (s, e) =>
             {
+                using (Brush bg = new SolidBrush(ThemeManager.Current.ControlBackColor))
+                {
+                    if (tabControl4.TabCount == 0)
+                    {
+                        e.Graphics.FillRectangle(bg, tabControl4.ClientRectangle);
+                        return;
+                    }
+
+                    if (e.Index == tabControl4.TabCount - 1)
+                    {
+                        Rectangle lastTabRect = tabControl4.GetTabRect(e.Index);
+                        if (lastTabRect.Right < tabControl4.Width)
+                        {
+                            Rectangle leftover = new Rectangle(
+                                lastTabRect.Right,
+                                lastTabRect.Top,
+                                tabControl4.Width - lastTabRect.Right,
+                                lastTabRect.Height);
+
+                            e.Graphics.FillRectangle(bg, leftover);
+                        }
+                    }
+                }
+
                 if (e.Index < 0 || e.Index >= tabControl4.TabPages.Count)
                     return;
 
                 TabPage page = tabControl4.TabPages[e.Index];
                 Rectangle rect = tabControl4.GetTabRect(e.Index);
+
+                bool selected = e.Index == tabControl4.SelectedIndex;
+
+                // tab background
+                using (Brush bg = new SolidBrush(ThemeManager.Current.ControlBackColor))
+                {
+                    e.Graphics.FillRectangle(bg, rect);
+                }
+
+                // selected highlight
+                if (selected)
+                {
+                    using (Brush accent = new SolidBrush(ThemeManager.Current.AccentColor))
+                    {
+                        e.Graphics.FillRectangle(accent, new Rectangle(rect.Left + 5, rect.Bottom - 3, rect.Width - 10, 3));
+                    }
+                }
 
                 // text
                 TextRenderer.DrawText(
@@ -2495,17 +2791,21 @@ namespace Alien
                     page.Text,
                     e.Font,
                     rect,
-                    Color.Black);
+                    selected ? ThemeManager.Current.AccentColor : ThemeManager.Current.ForeColor,
+                    TextFormatFlags.HorizontalCenter |
+                    TextFormatFlags.VerticalCenter
+                );
 
                 // X button
                 Rectangle closeRect = fnGetCloseRect(e.Index);
 
-                ControlPaint.DrawCaptionButton(
-                    e.Graphics,
-                    closeRect,
-                    CaptionButton.Close,
-                    ButtonState.Flat);
+                using (Pen pen = new Pen(ThemeManager.Current.ForeColor, 2))
+                {
+                    e.Graphics.DrawLine(pen, closeRect.Left + 4, closeRect.Top + 4, closeRect.Right - 4, closeRect.Bottom - 4);
+                    e.Graphics.DrawLine(pen, closeRect.Right - 4, closeRect.Top + 4, closeRect.Left + 4, closeRect.Bottom - 4);
+                }
             };
+
             tabControl4.MouseDown += (s, e) =>
             {
                 int nIdx = fnGetTabIndexAt(e.Location);
@@ -2525,10 +2825,12 @@ namespace Alien
 
                 tabControl4.DoDragDrop(draggedTab, DragDropEffects.Move);
             };
+
             tabControl4.DragOver += (s, e) =>
             {
                 e.Effect = DragDropEffects.Move;
             };
+
             tabControl4.DragDrop += (s, e) =>
             {
                 Point p = tabControl4.PointToClient(new Point(e.X, e.Y));
@@ -2555,6 +2857,7 @@ namespace Alien
 
                 draggedTab = null;
             };
+
             tabControl4.DragLeave += (s, e) =>
             {
                 draggedTab = null;
@@ -2564,7 +2867,7 @@ namespace Alien
 
             if (m_dicEvalScript.ContainsKey(m_victim.ShellLanguage))
             {
-                m_ctrlEvalEditor.Text = m_dicEvalScript[m_victim.ShellLanguage](m_victim.ShellMethod);
+                m_ctrlEvalEditor.Text = m_dicEvalScript[m_victim.ShellLanguage](m_victim.ShellPayloadType);
                 m_ctrlEvalEditor.Refresh();
             }
 
@@ -2610,38 +2913,6 @@ namespace Alien
                 toolStripStatusLabel4.Text = "Action successfully.";
             }
 
-            // Plugins
-
-            /*
-              
-            var plugins = m_plugin.fnGetPlugins();
-            foreach (var plugin in plugins)
-            {
-                TreeNode node = new TreeNode(plugin.szPluginName);
-                node.Tag = plugin;
-
-                treeView1.Nodes.Add(node);
-            }
-
-            */
-
-            try
-            {
-                string szEnv = Path.Combine(Enum.GetName(typeof(enLanguage), m_victim.ShellLanguage), m_victim.ShellMethod, Enum.GetName(typeof(enPayloadType), m_victim.ShellPayloadType)).Replace("\\", "/");
-
-                await webViewPlugin.EnsureCoreWebView2Async(null);
-                webViewPlugin.CoreWebView2.AddHostObjectToScript("nativeBridge", new clsfnPlugin.clsBridge(m_web, szEnv));
-
-                string szHtmlPath = Path.Combine(m_plugin.m_szPluginsDir, "index.html");
-                webViewPlugin.CoreWebView2.Navigate(szHtmlPath);
-
-                toolStripComboBox1.SelectedIndex = 0;
-            }
-            catch
-            {
-                return;
-            }
-
             // SOCKS5
             listView13.FullRowSelect = true;
             button4.Enabled = false;
@@ -2684,6 +2955,15 @@ namespace Alien
                     button4.Enabled = false;
                 });
             };
+
+            // Void
+            listView14.BackColor = Color.Black;
+            listView14.ForeColor = Color.Lime;
+            listView14.Refresh();
+
+            richTextBox3.BackColor = Color.Black;
+            richTextBox3.ForeColor = Color.Lime;
+            richTextBox3.Refresh();
 
             // Note
             try
@@ -2941,7 +3221,7 @@ namespace Alien
 
         private void treeView2_AfterSelect(object sender, TreeViewEventArgs e)
         {
-
+            
         }
 
         //Upload
@@ -3159,10 +3439,18 @@ namespace Alien
                 var config = m_dbMgr.m_stDbConfig[node.Text];
                 var result = await m_dbMgr.fnSqlQueryEx(config, m_dbMgr.m_dicShowDatabaseSQL[config.enDbType]);
 
+                if (result == null)
+                {
+                    MessageBox.Show("An error was occured in database configuration.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    toolStripLabel2.Text = "Action was failed";
+
+                    return;
+                }
+
                 if (!result.bSuccess)
                 {
                     MessageBox.Show(result.szErrorMsg, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    toolStripLabel2.Text = "Action failed!";
+                    toolStripLabel2.Text = "Action was failed!";
 
                     return;
                 }
@@ -3207,8 +3495,6 @@ namespace Alien
                 if (lsTables.Count == 0)
                 {
                     MessageBox.Show($"Cannot find any table in \"{szDbName}\"", "It is empty!", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-
-                    return;
                 }
 
                 fnDbShowTablePage(node, szHost, szDbName, lsTables);
@@ -3335,7 +3621,7 @@ namespace Alien
             string szDbName = ctrls.m_nodeRoot.Text;
             string szTable = item.Text;
 
-            string szQuery = $"SELECT * FROM `{szDbName}`.`{szTable}` LIMIT 100;";
+            string szQuery = m_dbMgr.fnBuildDataQuery(config.enDbType, szDbName, szTable);
             DataTable dt = await m_dbMgr.fnSqlQuery(config, szQuery);
 
             fnDbShowData(config, dt, szQuery, szDbName, szTable);
@@ -3349,6 +3635,8 @@ namespace Alien
                 return;
 
             clsDbTablePageControls ctrls = (clsDbTablePageControls)page.Tag;
+            if (ctrls.listView == null)
+                return;
 
             if (ctrls.listView.Items.Count == 0)
                 return;
@@ -3361,7 +3649,7 @@ namespace Alien
             string szDbName = ctrls.m_nodeRoot.Text;
             string szTable = item.Text;
 
-            string szQuery = $"SELECT * FROM `{szDbName}`.`{szTable}`;";
+            string szQuery = m_dbMgr.fnBuildDataQuery(config.enDbType, szDbName, szTable);
             DataTable dt = await m_dbMgr.fnSqlQuery(config, szQuery);
 
             fnDbShowData(config, dt, szQuery, szDbName, szTable);
@@ -3450,21 +3738,22 @@ namespace Alien
 
         private async void button1_Click(object sender, EventArgs e)
         {
-            bool bStart = string.Equals(button2.Text, "Start");
+            bool bStart = string.Equals(button1.Text, "Start");
 
             if (!bStart)
             {
-                timerShell.Stop();
-                button2.Text = "Start";
-                m_rShell.m_bIsRunning = false;
-
                 try
                 {
+                    timerShell.Stop();
+                    button1.Text = "Start";
+                    m_rShell.m_bIsRunning = false;
+
                     await m_rShell.fnPipeStop();
                 }
                 catch { }
 
                 m_isReading = false;
+
                 return;
             }
 
@@ -4361,7 +4650,7 @@ namespace Alien
 
         private async void toolStripMenuItem48_Click(object sender, EventArgs e)
         {
-            frmScanHost f = new frmScanHost();
+            frmScanHost f = new frmScanHost(m_iniMgr);
             if (f.ShowDialog() != DialogResult.OK)
                 return;
 
@@ -4410,9 +4699,9 @@ namespace Alien
                         else
                         {
                             if (m_lan.m_dicHost[ip].Contains(135) || m_lan.m_dicHost[ip].Contains(139) || m_lan.m_dicHost[ip].Contains(445))
-                                item.ImageKey = "Windows";
+                                Invoke(() => item.ImageKey = "Windows");
                             else if (m_lan.m_dicHost[ip].Contains(22))
-                                item.ImageKey = "Linux";
+                                Invoke(() => item.ImageKey = "Linux");
                         }
 
                         Invoke(() =>
@@ -4574,6 +4863,9 @@ namespace Alien
         {
             treeView1.Nodes.Clear();
 
+            string szHtmlPath = Path.Combine(m_plugin.m_szPluginsDir, "index.html");
+            webViewPlugin.CoreWebView2.Navigate(szHtmlPath);
+
             string szPluginsBaseDir = Path.Combine(Application.StartupPath, "Plugins");
             int nCount = await fnLoadAllPlugins(szPluginsBaseDir, treeView1.Nodes);
 
@@ -4586,10 +4878,23 @@ namespace Alien
         {
             if (e.KeyCode == Keys.Enter)
             {
-                if (string.IsNullOrEmpty(textBox13.Text))
+                if (string.IsNullOrEmpty(textBox12.Text))
                 {
                     string szHtmlPath = Path.Combine(m_plugin.m_szPluginsDir, "index.html");
                     webViewPlugin.CoreWebView2.Navigate(szHtmlPath);
+                }
+                else
+                {
+                    TreeNode node = fnFindNodeWithFullPath(treeView1.Nodes, textBox12.Text);
+                    if (node == null)
+                    {
+                        string szHtmlPath = Path.Combine(m_plugin.m_szPluginsDir, "404.html");
+                        webViewPlugin.CoreWebView2.Navigate(szHtmlPath);
+
+                        return;
+                    }
+
+                    treeView1.SelectedNode = node;
                 }
             }
         }
@@ -4601,7 +4906,7 @@ namespace Alien
                 treeView1.Nodes.Clear();
 
                 string szPluginsBaseDir = Path.Combine(Application.StartupPath, "Plugins");
-                int nCount = await fnLoadAllPlugins(szPluginsBaseDir, treeView1.Nodes, textBox12.Text);
+                int nCount = await fnLoadAllPlugins(szPluginsBaseDir, treeView1.Nodes, textBox13.Text);
 
                 treeView1.ExpandAll();
 
